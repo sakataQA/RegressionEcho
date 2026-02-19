@@ -242,6 +242,36 @@ export async function selectBamosPlan(page: Page, preferredDelta = 26): Promise<
 }
 
 /**
+ * 購入確認ダイアログの「購入する」ボタンを押す。
+ * 座標クリックで被り要素に阻まれるケースがあるため dispatchEvent を優先する。
+ */
+export async function clickPurchaseButton(page: Page): Promise<void> {
+  const clicked = await page.evaluate(() => {
+    const inOpenDialog = Array.from(document.querySelectorAll('dialog[open] button'));
+    for (const btn of inOpenDialog) {
+      if ((btn.textContent || '').trim().includes('購入する')) {
+        (btn as HTMLElement).click();
+        return true;
+      }
+    }
+
+    const allButtons = Array.from(document.querySelectorAll('button'));
+    for (const btn of allButtons) {
+      if ((btn.textContent || '').trim().includes('購入する')) {
+        (btn as HTMLElement).click();
+        return true;
+      }
+    }
+
+    return false;
+  });
+
+  if (!clicked) {
+    throw new Error('「購入する」ボタンが見つかりませんでした');
+  }
+}
+
+/**
  * 3D Secure のテスト画面が出ている場合は「Complete」を押して認証を完了する。
  * iframe ネストやモーダル表示の差分を吸収するため、全フレームを走査する。
  */

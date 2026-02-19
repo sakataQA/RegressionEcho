@@ -135,6 +135,9 @@ playwright-regression run --scenario TC001,TC002,TC003
 playwright-regression run --from TC010
 ```
 
+- `run` のテストID指定は半角スペース区切りです（例: `run TC001 TC003`）
+- カンマ区切りは `--scenario` のID指定で使用します（例: `--scenario TC001,TC002,TC003`）
+
 ### 6. 結果の確認
 
 ```bash
