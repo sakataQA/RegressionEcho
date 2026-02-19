@@ -273,30 +273,51 @@ export async function clickPurchaseButton(page: Page): Promise<void> {
 
 /**
  * 3D Secure のテスト画面が出ている場合は「Complete」を押して認証を完了する。
- * iframe ネストやモーダル表示の差分を吸収するため、全フレームを走査する。
+ * iframe ネスト・ポップアップ・文言差分（Complete/COMPLETE）を吸収する。
  */
 export async function completeThreeDsIfPresent(page: Page): Promise<boolean> {
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    const clicked = await (async () => {
-      for (const frame of page.frames()) {
-        const completeBtn = frame.locator('button:has-text("Complete")').first();
-        const has = await completeBtn.count().catch(() => 0);
-        if (has === 0) continue;
-        const done = await completeBtn
-          .click({ timeout: 2000, force: true })
-          .then(() => true)
-          .catch(() => false);
-        if (done) return true;
-      }
-      return false;
-    })();
+  const clickCompleteInFrame = async (targetPage: Page): Promise<boolean> => {
+    for (const frame of targetPage.frames()) {
+      const clicked = await frame.evaluate(() => {
+        const isVisible = (el: Element) => {
+          const h = el as HTMLElement;
+          const s = window.getComputedStyle(h);
+          return s.display !== 'none' && s.visibility !== 'hidden' && h.offsetParent !== null;
+        };
+        const candidates = Array.from(document.querySelectorAll('button, input[type="submit"], input[type="button"], a'));
+        for (const el of candidates) {
+          const label = (
+            (el.textContent || '') ||
+            (el.getAttribute('value') || '') ||
+            (el.getAttribute('aria-label') || '')
+          ).trim();
+          if (!label || !/complete/i.test(label) || !isVisible(el)) continue;
+          (el as HTMLElement).click();
+          return true;
+        }
+        return false;
+      }).catch(() => false);
+
+      if (clicked) return true;
+    }
+    return false;
+  };
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const pages = page.context().pages().filter((p) => !p.isClosed());
+    let clicked = false;
+
+    for (const p of pages) {
+      clicked = await clickCompleteInFrame(p);
+      if (clicked) break;
+    }
 
     if (clicked) {
       await page.waitForTimeout(1000);
       return true;
     }
 
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(2000);
   }
 
   return false;

@@ -92,8 +92,9 @@ describe('test-executor', () => {
       });
 
       expect(execSpy).toHaveBeenCalled();
-      const command = execSpy.mock.calls[0][0];
-      expect(command).toContain('PW_TEST_REUSE_CONTEXT=1 npx playwright test');
+      // PW_TEST_REUSE_CONTEXT=1 はコマンド文字列ではなく env オブジェクト経由で渡す
+      const callOptions = execSpy.mock.calls[0][1];
+      expect(callOptions.env).toHaveProperty('PW_TEST_REUSE_CONTEXT', '1');
     } finally {
       execSpy.mockRestore();
     }

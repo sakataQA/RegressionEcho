@@ -22,10 +22,19 @@ test('テストID-10 - 1〜9の通し実行', async ({ page }) => {
   const beforeBamos = await getBamosCount(page);
   expect(beforeBamos).not.toBeNull();
   expect(beforeBamos as number).toBeGreaterThanOrEqual(0);
+  console.log(`購入前のバモス：${beforeBamos}`);
 
   // 3-4. 商品選択→購入確認ダイアログの進行
   const selectedDelta = await selectBamosPlan(page, 26);
-  await expect(page.locator('button:has-text("購入する")').first()).toBeVisible({ timeout: 10000 });
+  console.log(`購入したバモス：${selectedDelta}`);
+  await page.waitForFunction(() => {
+    const inOpenDialog = Array.from(document.querySelectorAll('dialog[open] button'));
+    if (inOpenDialog.some((btn) => (btn.textContent || '').trim().includes('購入する'))) {
+      return true;
+    }
+    const allButtons = Array.from(document.querySelectorAll('button'));
+    return allButtons.some((btn) => (btn.textContent || '').trim().includes('購入する'));
+  }, { timeout: 10000 });
   await clickPurchaseButton(page);
 
   // 5. 支払い確定操作
@@ -53,6 +62,7 @@ test('テストID-10 - 1〜9の通し実行', async ({ page }) => {
   // 9. 購入後残高確認
   await goToShop(page);
   const afterBamos = await getBamosCount(page);
+  console.log(`購入後のバモス：${afterBamos}`);
   expect(afterBamos).not.toBeNull();
   expect(afterBamos as number).toBeGreaterThanOrEqual((beforeBamos as number) + selectedDelta);
 });
