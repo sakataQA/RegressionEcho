@@ -308,8 +308,6 @@ function createProgram(projectDir) {
     .argument('[testIds...]', '実行するテストID')
     .option('--from <testId>', '指定したテストIDから末尾まで実行')
     .option('--scenario [ids]', 'シナリオ実行（省略時: 全件、指定時: カンマ区切りID順）')
-    .option('--android', 'USB接続したAndroid実機で実行')
-    .option('--android-serial <serial>', 'Android実機シリアルを指定（--android と併用）')
     .description('テスト実行')
     .action(async (testIds, options) => {
       const config = loadConfig(projectDir);
@@ -338,8 +336,6 @@ function createProgram(projectDir) {
         timeout: config.playwright.timeout,
         headless: config.playwright.headless,
         reuseContext: options.scenario !== undefined,
-        deviceProfile: options.android ? 'android' : undefined,
-        androidSerial: options.androidSerial,
         baseURL: config.testUrl,
         authReadyPath: (config.authVerification && config.authVerification.urlIncludes) || '/home',
         authPollIntervalMs: (config.authVerification && config.authVerification.pollIntervalMs) || 5000,

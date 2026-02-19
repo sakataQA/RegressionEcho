@@ -133,18 +133,10 @@ playwright-regression run --scenario TC001,TC002,TC003
 
 # 指定IDから末尾まで実行
 playwright-regression run --from TC010
-
-# USB接続Android実機で実行（先頭デバイス）
-playwright-regression run --android
-
-# USB接続Android実機で実行（シリアル指定）
-playwright-regression run --android --android-serial emulator-5554
 ```
 
 - `run` のテストID指定は半角スペース区切りです（例: `run TC001 TC003`）
 - カンマ区切りは `--scenario` のID指定で使用します（例: `--scenario TC001,TC002,TC003`）
-- `--android` は Playwright の実験的 Android API（`_android`）で USB接続実機に対して実行します
-- 事前に `adb devices` で対象端末が `device` として見えている必要があります
 
 ### 6. 結果の確認
 
@@ -209,7 +201,7 @@ playwright-regression run TC002     # 動作確認
 | `auth [--check-url ... --check-selector ... --skip-check]` | 認証状態の保存（任意の到達検証付き） |
 | `discover-selectors [paths...]` | 認証済みページのDOMを実測しセレクタJSONを生成 |
 | `generate <csv> [--only テストID,...] [--selectors path]` | CSVからテスト生成（実測セレクタ入力に対応） |
-| `run [testIds...] [--scenario [ids]] [--from testId] [--android] [--android-serial serial]` | テスト実行（通常/順序実行/途中再開/Android実機） |
+| `run [testIds...] [--scenario [ids]] [--from testId]` | テスト実行（通常/順序実行/途中再開） |
 | `report` | レポート表示 |
 
 ## ディレクトリ構成
@@ -269,10 +261,6 @@ playwright-regression auth  # 再認証
 ## 詳細仕様
 
 詳細な仕様については[SPECIFICATION.md](./SPECIFICATION.md)を参照してください。
-
-## ライセンス
-
-MIT License - 詳細は[LICENSE](./LICENSE)を参照してください
 
 ## 作者
 
