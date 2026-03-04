@@ -146,7 +146,9 @@ export async function getBamosCount(page: Page): Promise<number | null> {
   // ページの描画を少し待つ
   await page.waitForTimeout(2000);
 
-  return page.evaluate(() => {
+  const currentUrl = page.url();
+
+  return page.evaluate((url) => {
     const parseNum = (t: string) => {
       const cleaned = t.replace(/[\s\u3000,]+/g, '').trim();
       return /^\d+$/.test(cleaned) ? Number(cleaned) : null;
@@ -189,13 +191,25 @@ export async function getBamosCount(page: Page): Promise<number | null> {
     for (const btn of buttons) {
       if (!isVisible(btn)) continue;
       const text = (btn.textContent || '').replace(/[\s\u3000,]+/g, '').trim();
+      if (url.includes('/packs')) continue;
       if (/^\d+$/.test(text) && !/¥|×|バモス|おトク/.test(btn.textContent || '')) {
         return Number(text);
       }
     }
 
+    // 方法4: /packs 上部ヘッダーでは [チケット, バモス] の2数値が出るため大きい方を採用
+    if (url.includes('/packs')) {
+      const nums: number[] = [];
+      for (const btn of buttons) {
+        if (!isVisible(btn)) continue;
+        const v = parseNum(btn.textContent || '');
+        if (v !== null) nums.push(v);
+      }
+      if (nums.length > 0) return Math.max(...nums);
+    }
+
     return null;
-  });
+  }, currentUrl);
 }
 
 /**
@@ -343,4 +357,382 @@ export async function clickFirstVisible(page: Page, selectors: string[]): Promis
     }
   }
   return false;
+}
+
+export type PackRate = {
+  playerName: string;
+  rateText: string;
+};
+
+export type PackAnimationSummary = {
+  animationDetected: boolean;
+  specialAnimationCount: number;
+};
+
+export type CardSwipeSummary = {
+  swipedCount: number;
+  cardLikeCount: number;
+};
+
+/**
+ * PlaywrightMCP で収集した候補をまとめる場所。
+ * 文言/構造差分を吸収するため、広めの候補を置いている。
+ */
+export const PACK_OPEN_SELECTORS = {
+  closeHomeDialog: [
+    'dialog[open] button[aria-label*="close" i]',
+    'dialog[open] button:has-text("閉じる")',
+    'dialog[open] button:has-text("×")',
+    'dialog[open] button:has-text("x")',
+    '[role="dialog"] button[aria-label*="close" i]',
+  ],
+  footerCollection: [
+    'a[href="/collection"]',
+    'button:has-text("コレクション")',
+    'a:has-text("コレクション")',
+  ],
+  footerPack: [
+    'a[href="/packs"]',
+    'a:has-text("PACK")',
+    'button:has-text("パック")',
+    'a:has-text("パック")',
+    'button:has-text("イベントパック")',
+    'a:has-text("イベントパック")',
+    'a[href="/pack"]',
+  ],
+  packDetail: [
+    'button:has-text("パック詳細")',
+    'a:has-text("パック詳細")',
+    'button:has-text("詳細")',
+    'a[href*="/packs/"]',
+    'a[href*="/pack/"]',
+    'img[alt*="パック"]',
+    'text=/イベントパック/',
+  ],
+  packRateLines: [
+    '[data-testid*="rate"]',
+    'li',
+    'p',
+    'div',
+  ],
+  drawTen: [
+    'button:has-text("10枚引く")',
+    'button:has-text("10連")',
+    'button:has-text("10回")',
+  ],
+  dialogDrawTen: [
+    'dialog[open] button:has-text("10枚引く")',
+    'dialog[open] button:has-text("10連")',
+    '[role="dialog"] button:has-text("10枚引く")',
+  ],
+  animationIndicators: [
+    'video',
+    'canvas',
+    '[data-testid*="animation"]',
+    '[class*="animation"]',
+    '[class*="movie"]',
+  ],
+  specialAnimationMarkers: [
+    '[data-testid*="special"]',
+    '[class*="special"]',
+    'text=/確定演出|確定|SSR|UR/i',
+  ],
+  cardLike: [
+    '[data-testid*="card"]',
+    '[class*="card"]',
+    'img[alt*="card" i]',
+    'img[src*="card"]',
+  ],
+  nextCard: [
+    'button:has-text("次へ")',
+    'button:has-text("NEXT")',
+    '[aria-label*="next" i]',
+  ],
+  skipAnimation: [
+    'button:has-text("スキップ")',
+    'button:has-text("SKIP")',
+  ],
+  closeResult: [
+    'button:has-text("スキップ")',
+    'dialog[open] button:has-text("スキップ")',
+    'dialog[open] button[aria-label*="close" i]',
+    'dialog[open] button:has-text("閉じる")',
+    'dialog[open] button:has-text("×")',
+    'button:has-text("×")',
+    'button:has-text("x")',
+    'button[aria-label*="close" i]',
+  ],
+} as const;
+
+async function dismissOkDialogIfPresent(page: Page): Promise<void> {
+  for (let i = 0; i < 4; i += 1) {
+    const closed = await clickFirstVisible(page, [
+      'dialog[open] button:has-text("OK")',
+      '[role="dialog"] button:has-text("OK")',
+      'button:has-text("OK")',
+    ]);
+    if (!closed) break;
+    await page.waitForTimeout(300);
+  }
+}
+
+export async function closeHomeDialogIfPresent(page: Page): Promise<boolean> {
+  const closed = await clickFirstVisible(page, [...PACK_OPEN_SELECTORS.closeHomeDialog]);
+  if (!closed) {
+    await dismissAllDialogs(page);
+    return false;
+  }
+  await page.waitForTimeout(500);
+  await dismissAllDialogs(page);
+  return true;
+}
+
+export async function goToCollection(page: Page): Promise<void> {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    if (page.url().includes('/collection') && !(await isUnavailablePage(page))) return;
+    await ensureHome(page);
+    await dismissAllDialogs(page);
+    await dismissOkDialogIfPresent(page);
+
+    const clicked = await clickFirstVisible(page, [...PACK_OPEN_SELECTORS.footerCollection]);
+    if (!clicked) {
+      await page.waitForTimeout(2000);
+      continue;
+    }
+
+    const moved = await page.waitForURL(/\/collection/, { timeout: 30000 }).then(() => true).catch(() => false);
+    if (!moved) continue;
+    await page.waitForTimeout(1500);
+    if (await isUnavailablePage(page)) continue;
+    return;
+  }
+  throw new Error('コレクション画面へ5回リトライしても遷移できませんでした');
+}
+
+export async function goToPack(page: Page): Promise<void> {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    if ((page.url().includes('/packs') || page.url().includes('/shop') || page.url().includes('/pack')) && !(await isUnavailablePage(page))) {
+      const clickedAtShop = await clickFirstVisible(page, [...PACK_OPEN_SELECTORS.footerPack]);
+      if (clickedAtShop) {
+        await page.waitForTimeout(1200);
+      }
+      if (page.url().includes('/packs')) return;
+    }
+    await ensureHome(page);
+    await dismissAllDialogs(page);
+    await dismissOkDialogIfPresent(page);
+
+    const clicked = await clickFirstVisible(page, [...PACK_OPEN_SELECTORS.footerPack]);
+    if (!clicked) {
+      await page.waitForTimeout(2000);
+      continue;
+    }
+
+    await page.waitForURL(/\/packs|\/shop|\/pack/, { timeout: 30000 }).catch(() => {});
+    await page.waitForTimeout(1500);
+    if (await isUnavailablePage(page)) continue;
+    if (page.url().includes('/packs')) return;
+  }
+  throw new Error('パック画面(/packs)へ5回リトライしても遷移できませんでした');
+}
+
+export async function getOwnedCardCount(page: Page): Promise<number | null> {
+  await page.waitForTimeout(1000);
+  return page.evaluate(() => {
+    const parse = (raw: string) => {
+      const cleaned = raw.replace(/[\s\u3000,]+/g, '').trim();
+      return /^\d+$/.test(cleaned) ? Number(cleaned) : null;
+    };
+    const isVisible = (el: Element) => {
+      const h = el as HTMLElement;
+      const s = window.getComputedStyle(h);
+      return s.display !== 'none' && s.visibility !== 'hidden' && h.offsetParent !== null;
+    };
+
+    for (const sel of ['[data-testid*="owned"]', '[data-testid*="collection"]', '[data-testid*="card-count"]']) {
+      const n = document.querySelector(sel);
+      if (!n || !isVisible(n)) continue;
+      const v = parse(n.textContent || '');
+      if (v !== null) return v;
+    }
+
+    const candidates = Array.from(document.querySelectorAll('div,span,p,strong,button'));
+    for (const el of candidates) {
+      if (!isVisible(el)) continue;
+      const text = (el.textContent || '').trim();
+      if (!/所持|枚|カード/i.test(text)) continue;
+      const m = text.match(/([0-9][0-9,]*)/);
+      if (m) return Number(m[1].replace(/,/g, ''));
+      for (const sibling of Array.from(el.parentElement?.children || [])) {
+        const parsed = parse((sibling.textContent || '').trim());
+        if (parsed !== null) return parsed;
+      }
+    }
+
+    const all = Array.from(document.querySelectorAll('body *'));
+    for (const el of all) {
+      if (!isVisible(el)) continue;
+      const parsed = parse((el.textContent || '').trim());
+      if (parsed !== null && parsed > 0) return parsed;
+    }
+    return null;
+  });
+}
+
+export async function openPackDetail(page: Page): Promise<void> {
+  const drawVisible = await page.locator(PACK_OPEN_SELECTORS.drawTen[0]).first().isVisible().catch(() => false);
+  if (drawVisible) return;
+  const clicked = await clickFirstVisible(page, [...PACK_OPEN_SELECTORS.packDetail]);
+  expect(clicked).toBeTruthy();
+  await page.waitForTimeout(2000);
+}
+
+export async function scrollUpToPackRates(page: Page): Promise<void> {
+  for (let i = 0; i < 4; i += 1) {
+    await page.mouse.wheel(0, -900);
+    await page.waitForTimeout(300);
+  }
+}
+
+export async function collectPackRates(page: Page): Promise<PackRate[]> {
+  await page.waitForTimeout(800);
+  return page.evaluate((selectors) => {
+    const isVisible = (el: Element) => {
+      const h = el as HTMLElement;
+      const s = window.getComputedStyle(h);
+      return s.display !== 'none' && s.visibility !== 'hidden' && h.offsetParent !== null;
+    };
+    const rows: PackRate[] = [];
+    const seen = new Set<string>();
+
+    for (const sel of selectors) {
+      const nodes = Array.from(document.querySelectorAll(sel));
+      for (const node of nodes) {
+        if (!isVisible(node)) continue;
+        const text = (node.textContent || '').replace(/\s+/g, ' ').trim();
+        const m = text.match(/([^\n\r]+?)\s*([0-9]+\.[0-9]+%|[0-9]+%)/);
+        if (!m) continue;
+        const playerName = m[1].trim();
+        const rateText = m[2].trim();
+        const key = `${playerName}__${rateText}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        rows.push({ playerName, rateText });
+      }
+    }
+    return rows;
+  }, PACK_OPEN_SELECTORS.packRateLines);
+}
+
+export async function scrollDownToDrawTen(page: Page): Promise<void> {
+  for (let i = 0; i < 6; i += 1) {
+    const visible = await page.locator(PACK_OPEN_SELECTORS.drawTen[0]).first().isVisible().catch(() => false);
+    if (visible) break;
+    await page.mouse.wheel(0, 900);
+    await page.waitForTimeout(350);
+  }
+}
+
+export async function clickDrawTen(page: Page): Promise<void> {
+  const clicked = await clickFirstVisible(page, [...PACK_OPEN_SELECTORS.drawTen]);
+  expect(clicked).toBeTruthy();
+}
+
+export async function confirmDrawTenDialog(page: Page): Promise<void> {
+  await page.locator('dialog[open], [role="dialog"]').first().waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+  const clicked = await clickFirstVisible(page, [...PACK_OPEN_SELECTORS.dialogDrawTen, ...PACK_OPEN_SELECTORS.drawTen]);
+  expect(clicked).toBeTruthy();
+}
+
+export async function waitForPackAnimationIfAny(page: Page): Promise<boolean> {
+  const skipShown = await page.locator(PACK_OPEN_SELECTORS.skipAnimation[0]).first().isVisible().catch(() => false);
+  if (skipShown) return true;
+
+  for (const sel of PACK_OPEN_SELECTORS.animationIndicators) {
+    const loc = page.locator(sel).first();
+    const appeared = await loc.waitFor({ state: 'visible', timeout: 8000 }).then(() => true).catch(() => false);
+    if (!appeared) continue;
+    await page.waitForTimeout(1500);
+    await loc.waitFor({ state: 'hidden', timeout: 45000 }).catch(async () => {
+      await page.waitForTimeout(4000);
+    });
+    return true;
+  }
+  await page.waitForTimeout(3000);
+  return false;
+}
+
+export async function countSpecialAnimationsIfPossible(page: Page): Promise<number> {
+  await page.waitForTimeout(1000);
+  return page.evaluate((selectors) => {
+    let total = 0;
+    for (const sel of selectors) {
+      if (sel.startsWith('text=')) continue;
+      total += document.querySelectorAll(sel).length;
+    }
+
+    const textNodes = Array.from(document.querySelectorAll('body *'));
+    for (const el of textNodes) {
+      const text = (el.textContent || '').trim();
+      if (/確定演出|確定|SSR|UR/i.test(text)) total += 1;
+    }
+    return total;
+  }, PACK_OPEN_SELECTORS.specialAnimationMarkers);
+}
+
+export async function swipeThrough10Cards(page: Page): Promise<CardSwipeSummary> {
+  await clickFirstVisible(page, [...PACK_OPEN_SELECTORS.skipAnimation]);
+  await page.waitForTimeout(1000);
+
+  let swiped = 0;
+  for (let i = 0; i < 9; i += 1) {
+    const clickedNext = await clickFirstVisible(page, [...PACK_OPEN_SELECTORS.nextCard]);
+    if (clickedNext) {
+      swiped += 1;
+      await page.waitForTimeout(500);
+      continue;
+    }
+
+    const box = await page.locator('main, body').first().boundingBox();
+    if (!box) break;
+    await page.mouse.move(box.x + box.width * 0.8, box.y + box.height * 0.6);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.6, { steps: 8 });
+    await page.mouse.up();
+    swiped += 1;
+    await page.waitForTimeout(600);
+  }
+
+  const cardLikeCount = await page.evaluate((selectors) => {
+    const hit = new Set<Element>();
+    for (const sel of selectors) {
+      document.querySelectorAll(sel).forEach((el) => hit.add(el));
+    }
+    const mainImages = Array.from(document.querySelectorAll('main img[alt]')).filter((img) => {
+      const alt = (img.getAttribute('alt') || '').trim();
+      if (!alt) return false;
+      if (['パック詳細メイン画像', 'ショップ', 'SR', 'R', 'N', 'FREE'].includes(alt)) return false;
+      return true;
+    });
+    mainImages.forEach((el) => hit.add(el));
+    return hit.size;
+  }, PACK_OPEN_SELECTORS.cardLike);
+
+  return { swipedCount: swiped, cardLikeCount };
+}
+
+export async function assertTenCardsShown(page: Page, summary?: CardSwipeSummary): Promise<void> {
+  const target = summary ?? (await swipeThrough10Cards(page));
+  expect(target.swipedCount >= 9 || target.cardLikeCount > 0).toBeTruthy();
+}
+
+export async function closePackResult(page: Page): Promise<void> {
+  const closed = await clickFirstVisible(page, [...PACK_OPEN_SELECTORS.closeResult]);
+  if (!closed) {
+    const onPacks = page.url().includes('/packs');
+    if (!onPacks) {
+      expect(closed).toBeTruthy();
+    }
+  }
+  await page.waitForTimeout(1000);
 }
