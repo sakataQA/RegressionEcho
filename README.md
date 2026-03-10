@@ -26,6 +26,36 @@ npm link  # グローバルコマンドとして使用可能にする
 
 ## 使い方
 
+## Dockerで実行する
+
+Playwright同梱イメージを使って、ローカル環境に依存せず実行できます。
+
+### 1. イメージ作成
+
+```bash
+docker compose build
+```
+
+### 2. テスト実行
+
+```bash
+# purchaseだけ実行
+docker compose run --rm regressionecho run purchase
+
+# 全テスト実行
+docker compose run --rm regressionecho run
+```
+
+### 3. レポート確認（ホスト側で表示）
+
+```bash
+npx playwright show-report
+```
+
+- `playwright-report/` と `test-results/` はボリューム共有されるため、コンテナ実行後もホストで確認できます。
+- コンテナでは `PW_HEADLESS=true` が既定です。
+
+
 ### 1. 初期セットアップ
 
 ```bash
@@ -137,6 +167,24 @@ playwright-regression run --from TC010
 
 - `run` のテストID指定は半角スペース区切りです（例: `run TC001 TC003`）
 - カンマ区切りは `--scenario` のID指定で使用します（例: `--scenario TC001,TC002,TC003`）
+- `run` の引数は **ファイル名ではなくテストID** です  
+  例: `tests/purchase.spec.ts` は `playwright-regression run purchase`
+  例: `tests/pack-open.spec.ts` は `playwright-regression run pack-open`
+
+### テストファイル名の変更（リネーム）
+
+- `playwright-regression run` の対象は `tests/*.spec.ts` のみです
+- ファイル名を変更する場合は、必ず `*.spec.ts` を維持してください
+- 実行時は拡張子を除いたIDを指定します
+
+```bash
+# 例: ファイル名変更
+mv tests/10.spec.ts tests/purchase.spec.ts
+mv tests/11.spec.ts tests/pack-open.spec.ts
+
+# 実行（拡張子は付けない）
+playwright-regression run purchase pack-open
+```
 
 ### 6. 結果の確認
 
@@ -203,6 +251,14 @@ playwright-regression run TC002     # 動作確認
 | `generate <csv> [--only テストID,...] [--selectors path]` | CSVからテスト生成（実測セレクタ入力に対応） |
 | `run [testIds...] [--scenario [ids]] [--from testId]` | テスト実行（通常/順序実行/途中再開） |
 | `report` | レポート表示 |
+
+## GitHubへ反映
+
+```bash
+git add Dockerfile docker-compose.yml .dockerignore playwright.config.js README.md
+git commit -m "Add Docker support for RegressionEcho"
+git push origin main
+```
 
 ## ディレクトリ構成
 

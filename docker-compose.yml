@@ -1,0 +1,17 @@
+services:
+  regressionecho:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /app
+    environment:
+      PW_HEADLESS: "true"
+      CI: "1"
+    volumes:
+      - ./config:/app/config
+      - ./storage:/app/storage
+      - ./tests:/app/tests
+      - ./playwright-report:/app/playwright-report
+      - ./test-results:/app/test-results
+    tty: true
+    stdin_open: true
