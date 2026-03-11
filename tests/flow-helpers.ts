@@ -359,6 +359,283 @@ export async function clickFirstVisible(page: Page, selectors: string[]): Promis
   return false;
 }
 
+/**
+ * PlaywrightMCP で収集したログインフロー要素の候補。
+ * 画面差分/文言差分を吸収するため複数候補を持たせる。
+ */
+export const LOGIN_FLOW_SELECTORS = {
+  closePwaPrompt: [
+    'dialog[open] button:has(img[src*="cross.svg"])',
+    'dialog[open] button[class*="IconButton_iconButton"]',
+    '[role="dialog"] button:has(img[src*="cross.svg"])',
+    'dialog[open] button:has-text("×")',
+    'dialog[open] button:has-text("x")',
+  ],
+  footerOthers: [
+    'role=link[name="その他"]',
+    'a[href="/others"]',
+    'nav a:has-text("その他")',
+    'a:has-text("その他")',
+  ],
+  nicknameEditEntry: [
+    'role=link[name="ニックネームの編集"]',
+    'a[href="/others/nickname_edit"]',
+    'a:has-text("ニックネームの編集")',
+  ],
+  nicknameEditReady: [
+    'role=textbox[name="ニックネーム"]',
+    'input[aria-label="ニックネーム"]',
+    'input[name="nickname"]',
+    'text=ニックネームの編集',
+  ],
+  nicknameValue: [
+    'role=textbox[name="ニックネーム"]',
+    'input[aria-label="ニックネーム"]',
+    'input[name="nickname"]',
+    'input[type="text"]',
+  ],
+  closeNicknameEdit: [
+    'button:has(img[src*="cross.svg"])',
+    'button[class*="ContentWithBottomActions_bottomActionsBottom"]',
+    'button:has-text("×")',
+    'button:has-text("x")',
+  ],
+  logoutButton: [
+    'role=button[name="ログアウト"]',
+    'main button:has-text("ログアウト")',
+    'button:has-text("ログアウト")',
+  ],
+  logoutDialogRoot: [
+    'dialog[open]',
+    '[role="dialog"]',
+  ],
+  confirmLogout: [
+    'dialog[open] button:has-text("ログアウト")',
+    '[role="dialog"] button:has-text("ログアウト")',
+  ],
+  cancelLogout: [
+    'dialog[open] button:has-text("キャンセル")',
+    '[role="dialog"] button:has-text("キャンセル")',
+  ],
+  jleagueLoginButton: [
+    'role=button[name="JリーグIDでログイン"]',
+    'button:has-text("JリーグIDでログイン")',
+  ],
+} as const;
+
+export async function closePwaPromptIfVisible(page: Page): Promise<boolean> {
+  for (const sel of LOGIN_FLOW_SELECTORS.closePwaPrompt) {
+    const loc = page.locator(sel).first();
+    const visible = await loc.isVisible({ timeout: 1200 }).catch(() => false);
+    if (!visible) continue;
+    const clicked = await loc.click({ timeout: 2000, force: true }).then(() => true).catch(() => false);
+    if (!clicked) continue;
+    await page.waitForTimeout(400);
+    return true;
+  }
+  return false;
+}
+
+export async function openOthersTab(page: Page): Promise<void> {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    if (page.url().includes('/others') && !page.url().includes('/others/nickname_edit')) return;
+
+    if (await isUnavailablePage(page)) {
+      await clickFirstVisible(page, ['a:has-text("ホーム画面に戻る")']);
+      await ensureHome(page);
+      await page.waitForTimeout(800);
+    }
+
+    if (!page.url().includes('/home') && !page.url().includes('/others')) {
+      await ensureHome(page);
+      await page.waitForTimeout(800);
+    }
+
+    await closePwaPromptIfVisible(page);
+
+    const clicked = await clickFirstVisible(page, [...LOGIN_FLOW_SELECTORS.footerOthers]);
+    if (!clicked) {
+      await closePwaPromptIfVisible(page);
+      await page.waitForTimeout(500);
+      continue;
+    }
+
+    const moved = await page.waitForURL(/\/others(?:\?|$)/, { timeout: 30000 }).then(() => true).catch(() => false);
+    if (!moved) {
+      await page.waitForTimeout(800);
+      continue;
+    }
+
+    if (await isUnavailablePage(page)) {
+      await page.waitForTimeout(1000);
+      continue;
+    }
+
+    await page.waitForTimeout(800);
+    return;
+  }
+  throw new Error('「その他」画面への遷移に失敗しました');
+}
+
+export async function openNicknameEdit(page: Page): Promise<void> {
+  if (!page.url().includes('/others') || page.url().includes('/others/nickname_edit')) {
+    await openOthersTab(page);
+  }
+
+  let moved = false;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    if (await isUnavailablePage(page)) {
+      await clickFirstVisible(page, ['a:has-text("ホーム画面に戻る")']);
+      await ensureHome(page);
+      await openOthersTab(page);
+      await page.waitForTimeout(800);
+    }
+
+    const clicked = await clickFirstVisible(page, [...LOGIN_FLOW_SELECTORS.nicknameEditEntry]);
+    if (!clicked) {
+      await page.waitForTimeout(500);
+      continue;
+    }
+
+    moved = await page.waitForURL(/\/others\/nickname_edit/, { timeout: 7000 }).then(() => true).catch(() => false);
+    if (moved) break;
+
+    const clickedByJs = await page.evaluate(() => {
+      const anchor = document.querySelector('a[href="/others/nickname_edit"]') as HTMLAnchorElement | null;
+      if (!anchor) return false;
+      anchor.click();
+      return true;
+    }).catch(() => false);
+    if (!clickedByJs) continue;
+
+    moved = await page.waitForURL(/\/others\/nickname_edit/, { timeout: 7000 }).then(() => true).catch(() => false);
+    if (moved) break;
+
+    if (await isUnavailablePage(page)) {
+      await clickFirstVisible(page, ['a:has-text("ホーム画面に戻る")']);
+      await ensureHome(page);
+      await openOthersTab(page);
+    }
+  }
+  expect(moved).toBeTruthy();
+
+  for (const sel of LOGIN_FLOW_SELECTORS.nicknameEditReady) {
+    const ready = await page.locator(sel).first().isVisible({ timeout: 3000 }).catch(() => false);
+    if (ready) return;
+  }
+  throw new Error('ニックネーム編集画面の表示完了を確認できませんでした');
+}
+
+export async function readNickname(page: Page): Promise<string> {
+  for (const sel of LOGIN_FLOW_SELECTORS.nicknameValue) {
+    const loc = page.locator(sel).first();
+    if ((await loc.count()) === 0) continue;
+    const visible = await loc.isVisible().catch(() => false);
+    if (!visible) continue;
+
+    const value = await loc.inputValue().catch(() => '');
+    const trimmed = value.trim();
+    if (trimmed.length > 0) return trimmed;
+  }
+
+  const fallback = await page.evaluate(() => {
+    const byName = document.querySelector('input[name="nickname"]') as HTMLInputElement | null;
+    if (byName?.value?.trim()) return byName.value.trim();
+
+    const byAria = document.querySelector('input[aria-label="ニックネーム"]') as HTMLInputElement | null;
+    if (byAria?.value?.trim()) return byAria.value.trim();
+
+    const candidates = Array.from(document.querySelectorAll('input[type="text"], textarea'));
+    for (const node of candidates) {
+      const input = node as HTMLInputElement | HTMLTextAreaElement;
+      if (!input.value || !input.value.trim()) continue;
+      const aria = (input.getAttribute('aria-label') || '').trim();
+      const placeholder = (input.getAttribute('placeholder') || '').trim();
+      if (aria.includes('ニックネーム') || placeholder.includes('ニックネーム')) {
+        return input.value.trim();
+      }
+    }
+    return '';
+  });
+
+  const nickname = fallback.trim();
+  if (!nickname) throw new Error('ニックネームを取得できませんでした');
+  return nickname;
+}
+
+export async function closeNicknameEdit(page: Page): Promise<void> {
+  const closed = await clickFirstVisible(page, [...LOGIN_FLOW_SELECTORS.closeNicknameEdit]);
+  expect(closed).toBeTruthy();
+  await page.waitForURL(/\/others(?:\?|$)/, { timeout: 30000 });
+}
+
+export async function openLogoutDialog(page: Page): Promise<void> {
+  const clicked = await clickFirstVisible(page, [...LOGIN_FLOW_SELECTORS.logoutButton]);
+  expect(clicked).toBeTruthy();
+
+  const hasDialog = await page
+    .locator(LOGIN_FLOW_SELECTORS.logoutDialogRoot.join(', '))
+    .first()
+    .isVisible({ timeout: 10000 })
+    .catch(() => false);
+  expect(hasDialog).toBeTruthy();
+
+  const hasConfirm = await page
+    .locator(LOGIN_FLOW_SELECTORS.confirmLogout.join(', '))
+    .first()
+    .isVisible({ timeout: 5000 })
+    .catch(() => false);
+  expect(hasConfirm).toBeTruthy();
+}
+
+export async function confirmLogout(page: Page): Promise<'signin' | 'home'> {
+  const clicked = await clickFirstVisible(page, [...LOGIN_FLOW_SELECTORS.confirmLogout]);
+  expect(clicked).toBeTruthy();
+
+  const toSignin = await page.waitForURL(/\/signin/, { timeout: 30000 }).then(() => true).catch(() => false);
+  if (toSignin) return 'signin';
+
+  const toHome = await page.waitForURL(/\/auth\/jleague\/callback|\/home/, { timeout: 30000 }).then(() => true).catch(() => false);
+  if (toHome) return 'home';
+
+  throw new Error(`ログアウト後の遷移先が期待外です: ${page.url()}`);
+}
+
+export async function logoutWithConfirm(page: Page): Promise<'signin' | 'home'> {
+  await openLogoutDialog(page);
+  return confirmLogout(page);
+}
+
+export async function loginWithJLeagueId(page: Page): Promise<void> {
+  if (page.url().includes('/home')) return;
+
+  if (page.url().includes('/auth/jleague/callback')) {
+    await page.waitForURL(/\/home/, { timeout: 60000 });
+    return;
+  }
+
+  await page.waitForURL(/\/signin|\/home/, { timeout: 30000 }).catch(() => {});
+  if (page.url().includes('/home')) return;
+
+  let clicked = false;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    clicked = await clickFirstVisible(page, [...LOGIN_FLOW_SELECTORS.jleagueLoginButton]);
+    if (clicked) break;
+    await page.mouse.wheel(0, 500);
+    await page.waitForTimeout(300);
+  }
+  expect(clicked).toBeTruthy();
+
+  const reachedHome = await page.waitForURL(/\/home|\/auth\/jleague\/callback/, { timeout: 60000 }).then(() => true).catch(() => false);
+  if (!reachedHome) {
+    throw new Error(`「JリーグIDでログイン」押下後に /home へ遷移しませんでした: ${page.url()}`);
+  }
+
+  if (page.url().includes('/auth/jleague/callback')) {
+    await page.waitForURL(/\/home/, { timeout: 60000 });
+  }
+}
+
 export type PackRate = {
   playerName: string;
   rateText: string;

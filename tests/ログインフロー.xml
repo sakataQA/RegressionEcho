@@ -1,0 +1,37 @@
+<mxfile host="app.diagrams.net" modified="2026-03-11T00:00:00.000Z" agent="ChatGPT" version="24.7.0" type="device">
+  <diagram id="auto-login" name="自動テスト_ログイン">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="n_start" value="開始" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;" vertex="1" parent="1"><mxGeometry x="530" y="40" width="120" height="60" as="geometry"/></mxCell>
+        <mxCell id="n_01" value="1 前準備&#xa;やること: 認証突破してログイン&#xa;開始: https://development.pocket-heroes.net/home" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="80" y="140" width="1000" height="90" as="geometry"/></mxCell>
+        <mxCell id="n_02" value="2 PWA訴求を閉じる&#xa;やること: 「x」をタップしてPWA訴求ダイアログを閉じる&#xa;期待値: ホーム画面が表示される&#xa;開始: https://development.pocket-heroes.net/home" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="80" y="260" width="1000" height="90" as="geometry"/></mxCell>
+        <mxCell id="n_03" value="3 「その他」画面を表示する&#xa;やること: フッターで「その他」をタップする&#xa;期待値: 「その他」画面が表示される&#xa;開始: https://development.pocket-heroes.net/others" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="80" y="380" width="1000" height="90" as="geometry"/></mxCell>
+        <mxCell id="n_04" value="4 ニックネームの確認&#xa;やること: 「ニックネームの編集」をタップする&#xa;期待値: 表示されているニックネームをstdoutに表示する&#xa;遷移: https://development.pocket-heroes.net/others/nickname_edit" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="80" y="500" width="1000" height="90" as="geometry"/></mxCell>
+        <mxCell id="n_05" value="5 「その他」画面に戻る&#xa;やること: 画面内の「x」をタップして画面を閉じる&#xa;期待値: 「その他」画面に戻る&#xa;遷移: https://development.pocket-heroes.net/others" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="80" y="620" width="1000" height="90" as="geometry"/></mxCell>
+        <mxCell id="n_06" value="6 ログアウト&#xa;やること: 「ログアウト」をタップする&#xa;期待値: 確認ダイアログが表示される" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="80" y="740" width="1000" height="90" as="geometry"/></mxCell>
+        <mxCell id="n_07" value="7 ログアウト&#xa;やること: 「ログアウトしますか？」ダイアログで「ログアウト」をタップする&#xa;期待値: サインイン画面に遷移する&#xa;遷移: https://development.pocket-heroes.net/signin" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="80" y="860" width="1000" height="90" as="geometry"/></mxCell>
+        <mxCell id="n_08" value="8 ログイン&#xa;やること: 「JリーグIDでログイン」をタップする（見切れている場合はスワイプ必要）&#xa;期待値: ホーム画面が表示される（待つとPWA訴求ダイアログが表示される）&#xa;開始: https://development.pocket-heroes.net/signin" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="80" y="980" width="1000" height="90" as="geometry"/></mxCell>
+        <mxCell id="n_09" value="9 PWA訴求を閉じる&#xa;やること: 「x」をタップしてPWA訴求ダイアログを閉じる&#xa;期待値: ホーム画面が表示される&#xa;開始: https://development.pocket-heroes.net/home" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="80" y="1100" width="1000" height="90" as="geometry"/></mxCell>
+        <mxCell id="n_10" value="10 「その他」画面を表示する&#xa;やること: フッターで「その他」をタップする&#xa;期待値: 「その他」画面が表示される&#xa;遷移: https://development.pocket-heroes.net/others" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="80" y="1220" width="1000" height="90" as="geometry"/></mxCell>
+        <mxCell id="n_11" value="11 ニックネームの確認&#xa;やること: 「ニックネームの編集」をタップする&#xa;期待値: 表示されているニックネームをstdoutに表示する&#xa;遷移: https://development.pocket-heroes.net/others/nickname_edit" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="80" y="1340" width="1000" height="90" as="geometry"/></mxCell>
+        <mxCell id="n_12" value="12 ログインできたか確認する&#xa;やること: 手順4と手順11のニックネームが同じか確認する&#xa;期待値: 同じであれば合格" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="80" y="1460" width="1000" height="90" as="geometry"/></mxCell>
+        <mxCell id="n_end" value="終了" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;" vertex="1" parent="1"><mxGeometry x="530" y="1580" width="120" height="60" as="geometry"/></mxCell>
+        <mxCell id="e_n_start_n_01" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="n_start" target="n_01"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_n_01_n_02" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="n_01" target="n_02"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_n_02_n_03" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="n_02" target="n_03"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_n_03_n_04" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="n_03" target="n_04"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_n_04_n_05" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="n_04" target="n_05"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_n_05_n_06" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="n_05" target="n_06"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_n_06_n_07" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="n_06" target="n_07"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_n_07_n_08" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="n_07" target="n_08"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_n_08_n_09" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="n_08" target="n_09"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_n_09_n_10" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="n_09" target="n_10"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_n_10_n_11" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="n_10" target="n_11"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_n_11_n_12" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="n_11" target="n_12"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_n_12_n_end" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="n_12" target="n_end"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

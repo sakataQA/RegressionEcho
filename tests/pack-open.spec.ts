@@ -19,7 +19,7 @@ import {
   countSpecialAnimationsIfPossible,
 } from './flow-helpers';
 
-test('パック開封フロー（draw.io→test.step 実装）', async ({ page }) => {
+test('パック開封フロー（pack-open）', async ({ page }) => {
   test.setTimeout(300000);
 
   const drawCost = 50;
