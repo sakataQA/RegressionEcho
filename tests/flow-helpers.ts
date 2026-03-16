@@ -137,17 +137,74 @@ export async function goToShop(page: Page): Promise<void> {
 
 /**
  * バモスの現在所持数を取得する。
- *
- * SHOP画面では "SHOP" テキストの隣にボタンとして所持数が表示される：
- *   <div>SHOP</div> <button>500</button>
- * ボタンのテキストが純粋な数値（¥や×を含まない）の場合、それが所持数。
+ * 1) バモス表示をタップしてダイアログを開く
+ * 2) ダイアログ文言「所持バモス ×NNN」から数値を取得
+ * 3) 最後にダイアログを「x」で閉じる
+ * 4) 取得できない場合のみ従来のDOM推定へフォールバック
  */
 export async function getBamosCount(page: Page): Promise<number | null> {
-  // ページの描画を少し待つ
   await page.waitForTimeout(2000);
 
-  const currentUrl = page.url();
+  const clickedIndicator = await page.evaluate(() => {
+    const isVisible = (el: Element) => {
+      const h = el as HTMLElement;
+      const s = window.getComputedStyle(h);
+      const r = h.getBoundingClientRect();
+      return s.display !== 'none' && s.visibility !== 'hidden' && r.width > 10 && r.height > 10;
+    };
 
+    const candidates: Array<{ el: HTMLButtonElement; top: number; score: number }> = [];
+    const buttons = Array.from(document.querySelectorAll('button')) as HTMLButtonElement[];
+    for (const btn of buttons) {
+      if (!isVisible(btn)) continue;
+      const raw = (btn.textContent || '').replace(/[\s\u3000]+/g, '');
+      if (!/^[0-9][0-9,]*\+?$/.test(raw)) continue;
+      const rect = btn.getBoundingClientRect();
+      const score = Number(raw.replace(/[,+]/g, '')) || 0;
+      candidates.push({ el: btn, top: rect.top, score });
+    }
+
+    if (candidates.length === 0) return false;
+    candidates.sort((a, b) => a.top - b.top || b.score - a.score);
+    candidates[0].el.click();
+    return true;
+  });
+
+  let valueFromDialog: number | null = null;
+  if (clickedIndicator) {
+    await page.waitForFunction(() => {
+      const dialogs = Array.from(document.querySelectorAll('dialog[open], [role="dialog"]'));
+      return dialogs.some((d) => /所持バモス|バモス/.test((d.textContent || '').replace(/\s+/g, '')));
+    }, { timeout: 5000 }).catch(() => {});
+
+    valueFromDialog = await page.evaluate(() => {
+      const dialogs = Array.from(document.querySelectorAll('dialog[open], [role="dialog"]'));
+      for (const dialog of dialogs) {
+        const text = (dialog.textContent || '').replace(/[\s\u3000]+/g, '');
+        if (!/所持バモス|バモス/.test(text)) continue;
+
+        const direct = text.match(/所持バモス[^0-9]*([0-9][0-9,]*)/);
+        if (direct) return Number(direct[1].replace(/,/g, ''));
+
+        const generic = text.match(/バモス[^0-9]*([0-9][0-9,]*)/);
+        if (generic) return Number(generic[1].replace(/,/g, ''));
+      }
+      return null;
+    });
+
+    await clickFirstVisible(page, [
+      'dialog[open] button:has(img[src*="cross.svg"])',
+      '[role="dialog"] button:has(img[src*="cross.svg"])',
+      'dialog[open] button[class*="ContentWithBottomActions_bottomActionsBottom"]',
+      'dialog[open] button:has-text("×")',
+      'dialog[open] button:has-text("x")',
+    ]);
+    await page.waitForTimeout(300);
+  }
+
+  if (valueFromDialog !== null) return valueFromDialog;
+
+  const currentUrl = page.url();
   return page.evaluate((url) => {
     const parseNum = (t: string) => {
       const cleaned = t.replace(/[\s\u3000,]+/g, '').trim();
@@ -159,7 +216,6 @@ export async function getBamosCount(page: Page): Promise<number | null> {
       return s.display !== 'none' && s.visibility !== 'hidden' && h.offsetParent !== null;
     };
 
-    // 方法1: data-testid を優先
     for (const sel of ['[data-testid*="bamos"]', '[data-testid*="vamos"]', '[data-testid*="currency"]']) {
       const node = document.querySelector(sel);
       if (node && isVisible(node)) {
@@ -168,36 +224,28 @@ export async function getBamosCount(page: Page): Promise<number | null> {
       }
     }
 
-    // 方法2: "SHOP" テキスト要素の兄弟から数値を探す
     const allElements = Array.from(document.querySelectorAll('body *'));
     for (const el of allElements) {
       if (!isVisible(el)) continue;
       const text = (el.textContent || '').trim();
-      if (text === 'SHOP') {
-        const parent = el.parentElement;
-        if (!parent) continue;
-        for (const sibling of Array.from(parent.children)) {
-          if (sibling === el) continue;
-          const sibText = (sibling.textContent || '').replace(/[\s\u3000,]+/g, '').trim();
-          if (/^\d+$/.test(sibText)) {
-            return Number(sibText);
-          }
-        }
+      if (text !== 'SHOP') continue;
+      const parent = el.parentElement;
+      if (!parent) continue;
+      for (const sibling of Array.from(parent.children)) {
+        if (sibling === el) continue;
+        const sibText = (sibling.textContent || '').replace(/[\s\u3000,]+/g, '').trim();
+        if (/^\d+$/.test(sibText)) return Number(sibText);
       }
     }
 
-    // 方法3: 純粋な数値テキストを持つボタン（¥、×、バモス等を含まない）
     const buttons = Array.from(document.querySelectorAll('button'));
     for (const btn of buttons) {
       if (!isVisible(btn)) continue;
       const text = (btn.textContent || '').replace(/[\s\u3000,]+/g, '').trim();
       if (url.includes('/packs')) continue;
-      if (/^\d+$/.test(text) && !/¥|×|バモス|おトク/.test(btn.textContent || '')) {
-        return Number(text);
-      }
+      if (/^\d+$/.test(text) && !/¥|×|バモス|おトク/.test(btn.textContent || '')) return Number(text);
     }
 
-    // 方法4: /packs 上部ヘッダーでは [チケット, バモス] の2数値が出るため大きい方を採用
     if (url.includes('/packs')) {
       const nums: number[] = [];
       for (const btn of buttons) {

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Playwright XML Flow Generator"
+  short_description: "Generate Playwright tests from draw.io XML"
+  default_prompt: "Use $playwright-xml-flow-generator to turn a draw.io XML flow into a Playwright TypeScript spec for this repo."
