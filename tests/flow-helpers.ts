@@ -697,6 +697,8 @@ export type PackAnimationSummary = {
 export type CardSwipeSummary = {
   swipedCount: number;
   cardLikeCount: number;
+  totalCards?: number;
+  requiredAdvances?: number;
 };
 
 /**
@@ -767,6 +769,21 @@ export const PACK_OPEN_SELECTORS = {
     '[class*="card"]',
     'img[alt*="card" i]',
     'img[src*="card"]',
+  ],
+  resultWrapper: [
+    '[class*="MultipleResult_wrapper"]',
+  ],
+  resultCardArea: [
+    '[class*="MultipleResult_cardArea"]',
+  ],
+  edgeTapLeft: [
+    '[class*="MultipleResult_edgeTapArea"][class*="Left"]',
+  ],
+  edgeTapRight: [
+    '[class*="MultipleResult_edgeTapArea"][class*="Right"]',
+  ],
+  cardGestureArea: [
+    '[class*="MultipleResult_cardAreaGestureDetector"]',
   ],
   nextCard: [
     'button:has-text("次へ")',
@@ -905,9 +922,19 @@ export async function getOwnedCardCount(page: Page): Promise<number | null> {
 }
 
 export async function openPackDetail(page: Page): Promise<void> {
-  const drawVisible = await page.locator(PACK_OPEN_SELECTORS.drawTen[0]).first().isVisible().catch(() => false);
-  if (drawVisible) return;
-  const clicked = await clickFirstVisible(page, [...PACK_OPEN_SELECTORS.packDetail]);
+  let clicked = await clickFirstVisible(page, [...PACK_OPEN_SELECTORS.packDetail]);
+  if (!clicked) {
+    clicked = await page.evaluate(() => {
+      const candidates = Array.from(document.querySelectorAll('button, a')) as HTMLElement[];
+      for (const el of candidates) {
+        const text = (el.textContent || '').replace(/\s+/g, '');
+        if (!text.includes('パック詳細')) continue;
+        el.click();
+        return true;
+      }
+      return false;
+    });
+  }
   expect(clicked).toBeTruthy();
   await page.waitForTimeout(2000);
 }
@@ -1006,26 +1033,77 @@ export async function countSpecialAnimationsIfPossible(page: Page): Promise<numb
 }
 
 export async function swipeThrough10Cards(page: Page): Promise<CardSwipeSummary> {
-  await clickFirstVisible(page, [...PACK_OPEN_SELECTORS.skipAnimation]);
-  await page.waitForTimeout(1000);
-
   let swiped = 0;
-  for (let i = 0; i < 9; i += 1) {
-    const clickedNext = await clickFirstVisible(page, [...PACK_OPEN_SELECTORS.nextCard]);
-    if (clickedNext) {
-      swiped += 1;
-      await page.waitForTimeout(500);
-      continue;
+  // 10枚表示のために9回進める。左右タップのみを交互に実行する。
+  const actionPattern: Array<'tap-left' | 'tap-right'> = [
+    'tap-left',
+    'tap-right',
+  ];
+  const waitForCardProgress = async (beforeIndex: number, timeoutMs = 2500): Promise<boolean> => {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const current = await page.evaluate(() => {
+        const cards = Array.from(document.querySelectorAll('[class*="SequentialResultCard_card"]'));
+        if (cards.length === 0) return -1;
+        const fadeInIndex = cards.findIndex((el) => (el.className || '').includes('fadeIn'));
+        if (fadeInIndex >= 0) return fadeInIndex;
+        const visibleIndex = cards.findIndex((el) => {
+          const c = el.className || '';
+          return !c.includes('hidden') && !c.includes('slideOut');
+        });
+        if (visibleIndex >= 0) return visibleIndex;
+        return cards.findIndex((el) => !(el.className || '').includes('hidden'));
+      });
+      if (current >= 0 && current !== beforeIndex) return true;
+      await page.waitForTimeout(120);
+    }
+    return false;
+  };
+  const getCurrentIndex = async (): Promise<number> => {
+    return page.evaluate(() => {
+      const cards = Array.from(document.querySelectorAll('[class*="SequentialResultCard_card"]'));
+      if (cards.length === 0) return -1;
+      const fadeInIndex = cards.findIndex((el) => (el.className || '').includes('fadeIn'));
+      if (fadeInIndex >= 0) return fadeInIndex;
+      const visibleIndex = cards.findIndex((el) => {
+        const c = el.className || '';
+        return !c.includes('hidden') && !c.includes('slideOut');
+      });
+      if (visibleIndex >= 0) return visibleIndex;
+      return cards.findIndex((el) => !(el.className || '').includes('hidden'));
+    });
+  };
+  const totalCards = await page.evaluate(() => {
+    const count = document.querySelectorAll('[class*="MultipleResult_cardArea"]').length;
+    return count > 0 ? count : null;
+  });
+  const requiredAdvances = Math.max(0, Math.min(9, (totalCards ?? 10) - 1));
+
+  for (let i = 0; i < requiredAdvances; i += 1) {
+    const beforeIndex = await getCurrentIndex();
+    const box = await page.locator(PACK_OPEN_SELECTORS.cardGestureArea.join(', ')).first().boundingBox()
+      ?? await page.locator(PACK_OPEN_SELECTORS.resultWrapper.join(', ')).first().boundingBox()
+      ?? await page.locator('main, body').first().boundingBox();
+    if (!box) break;
+    const action = actionPattern[i % actionPattern.length];
+    const centerY = box.y + box.height * 0.6;
+    const leftX = box.x + box.width * 0.25;
+    const rightX = box.x + box.width * 0.75;
+
+    if (action === 'tap-left') {
+      const tapped = await clickFirstVisible(page, [...PACK_OPEN_SELECTORS.edgeTapLeft]);
+      if (!tapped) await page.mouse.click(leftX, centerY);
+    } else {
+      const tapped = await clickFirstVisible(page, [...PACK_OPEN_SELECTORS.edgeTapRight]);
+      if (!tapped) await page.mouse.click(rightX, centerY);
     }
 
-    const box = await page.locator('main, body').first().boundingBox();
-    if (!box) break;
-    await page.mouse.move(box.x + box.width * 0.8, box.y + box.height * 0.6);
-    await page.mouse.down();
-    await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.6, { steps: 8 });
-    await page.mouse.up();
+    const progressed = await waitForCardProgress(beforeIndex);
+    if (!progressed) {
+      throw new Error(`カード送りが進みませんでした: step=${i + 1}, action=${action}, beforeIndex=${beforeIndex}`);
+    }
     swiped += 1;
-    await page.waitForTimeout(600);
+    await page.waitForTimeout(220);
   }
 
   const cardLikeCount = await page.evaluate((selectors) => {
@@ -1043,12 +1121,14 @@ export async function swipeThrough10Cards(page: Page): Promise<CardSwipeSummary>
     return hit.size;
   }, PACK_OPEN_SELECTORS.cardLike);
 
-  return { swipedCount: swiped, cardLikeCount };
+  return { swipedCount: swiped, cardLikeCount, totalCards: totalCards ?? undefined, requiredAdvances };
 }
 
 export async function assertTenCardsShown(page: Page, summary?: CardSwipeSummary): Promise<void> {
   const target = summary ?? (await swipeThrough10Cards(page));
-  expect(target.swipedCount >= 9 || target.cardLikeCount > 0).toBeTruthy();
+  const required = target.requiredAdvances ?? 9;
+  expect(target.swipedCount).toBeGreaterThanOrEqual(required);
+  expect(target.cardLikeCount).toBeGreaterThan(0);
 }
 
 export async function closePackResult(page: Page): Promise<void> {

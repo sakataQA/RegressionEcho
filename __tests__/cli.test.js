@@ -1,7 +1,13 @@
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { createProgram, resolveAuthVerification, loadSelectorCatalog, resolveRunFilterIds } = require('../bin/cli');
+const {
+  createProgram,
+  resolveAuthVerification,
+  loadSelectorCatalog,
+  resolveRunFilterIds,
+  resolveRunInvocation,
+} = require('../bin/cli');
 const { TestExecutor } = require('../lib/test-executor');
 
 describe('CLI', () => {
@@ -175,5 +181,17 @@ describe('CLI', () => {
     expect(() => resolveRunFilterIds(executor, [], { scenario: '2,99' })).toThrow(
       'scenario に存在しないテストIDがあります: 99'
     );
+  });
+
+  test('resolveRunInvocation は末尾 slack を通知指定として扱う', () => {
+    const resolved = resolveRunInvocation(['purchase', 'slack'], {});
+    expect(resolved.testIds).toEqual(['purchase']);
+    expect(resolved.slackRequested).toBe(true);
+  });
+
+  test('resolveRunInvocation は --slack 指定を優先する', () => {
+    const resolved = resolveRunInvocation(['purchase'], { slack: true });
+    expect(resolved.testIds).toEqual(['purchase']);
+    expect(resolved.slackRequested).toBe(true);
   });
 });

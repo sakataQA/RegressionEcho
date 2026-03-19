@@ -12,6 +12,9 @@ module.exports = defineConfig({
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
   },
-  reporter: [['html', { outputFolder: '/Users/kazunori.sakata.ts/MIXITools/RegressionEcho/playwright-report', open: 'never' }]],
+  reporter: [
+    ['html', { outputFolder: '/Users/kazunori.sakata.ts/MIXITools/RegressionEcho/playwright-report', open: 'never' }],
+    ['json', { outputFile: '/Users/kazunori.sakata.ts/MIXITools/RegressionEcho/test-results/results.json' }]
+  ],
   workers: 1,
 });

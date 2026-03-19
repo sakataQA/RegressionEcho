@@ -7,6 +7,7 @@ services:
     environment:
       PW_HEADLESS: "true"
       CI: "1"
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
     volumes:
       - ./config:/app/config
       - ./storage:/app/storage

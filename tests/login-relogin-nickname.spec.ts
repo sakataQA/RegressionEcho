@@ -11,7 +11,7 @@ import {
   readNickname,
 } from './flow-helpers';
 
-test('ログイン再実行でニックネーム維持（login-relogin-nickname）', async ({ page }) => {
+test('ログアウト〜ログイン再実行（login-relogin-nickname）', async ({ page }) => {
   test.setTimeout(300000);
 
   let nicknameBefore = '';

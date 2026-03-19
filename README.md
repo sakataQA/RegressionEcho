@@ -44,6 +44,13 @@ docker compose run --rm regressionecho run purchase
 
 # 全テスト実行
 docker compose run --rm regressionecho run
+
+# Slack通知付き（config/config.json の webhookUrl を利用）
+docker compose run --rm regressionecho run purchase slack
+
+# Slack通知付き（環境変数で上書き）
+SLACK_WEBHOOK_URL='https://hooks.slack.com/services/xxx/yyy/zzz' \
+docker compose run --rm regressionecho run purchase slack
 ```
 
 ### 3. レポート確認（ホスト側で表示）
@@ -54,6 +61,7 @@ npx playwright show-report
 
 - `playwright-report/` と `test-results/` はボリューム共有されるため、コンテナ実行後もホストで確認できます。
 - コンテナでは `PW_HEADLESS=true` が既定です。
+- `SLACK_WEBHOOK_URL` を設定すると、コンテナ実行時に通知先を上書きできます。
 
 
 ### 1. 初期セットアップ
@@ -76,6 +84,9 @@ playwright-regression init
     "timeout": 30000
   },
   "testUrl": "https://your-test-environment.example.com",
+  "slack": {
+    "webhookUrl": "https://hooks.slack.com/services/xxx/yyy/zzz"
+  },
   "authVerification": {
     "enabled": false,
     "urlIncludes": "/home",
@@ -163,6 +174,12 @@ playwright-regression run --scenario TC001,TC002,TC003
 
 # 指定IDから末尾まで実行
 playwright-regression run --from TC010
+
+# Slack通知付き（末尾に slack）
+playwright-regression run purchase slack
+
+# Slack通知付き（オプション）
+playwright-regression run purchase --slack
 ```
 
 - `run` のテストID指定は半角スペース区切りです（例: `run TC001 TC003`）
@@ -170,6 +187,7 @@ playwright-regression run --from TC010
 - `run` の引数は **ファイル名ではなくテストID** です  
   例: `tests/purchase.spec.ts` は `playwright-regression run purchase`
   例: `tests/pack-open.spec.ts` は `playwright-regression run pack-open`
+- Slack通知時のWebhook URLは `SLACK_WEBHOOK_URL` を優先し、未設定時は `config/config.json` の `slack.webhookUrl` を使用します
 
 ### テストファイル名の変更（リネーム）
 
@@ -249,7 +267,7 @@ playwright-regression run TC002     # 動作確認
 | `auth [--check-url ... --check-selector ... --skip-check]` | 認証状態の保存（任意の到達検証付き） |
 | `discover-selectors [paths...]` | 認証済みページのDOMを実測しセレクタJSONを生成 |
 | `generate <csv> [--only テストID,...] [--selectors path]` | CSVからテスト生成（実測セレクタ入力に対応） |
-| `run [testIds...] [--scenario [ids]] [--from testId]` | テスト実行（通常/順序実行/途中再開） |
+| `run [testIds...] [--scenario [ids]] [--from testId] [--slack]` | テスト実行（通常/順序実行/途中再開/Slack通知） |
 | `report` | レポート表示 |
 
 ## GitHubへ反映

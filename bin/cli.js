@@ -9,6 +9,7 @@ const { ClaudeClient } = require('../lib/claude-client');
 const { TestGenerator } = require('../lib/test-generator');
 const { TestExecutor } = require('../lib/test-executor');
 const { DomScanner } = require('../lib/dom-scanner');
+const { notifyFromPlaywrightReport } = require('../lib/slack-notifier');
 
 const CONFIG_TEMPLATE = {
   anthropic: {
@@ -26,6 +27,9 @@ const CONFIG_TEMPLATE = {
     visibleSelectors: [],
     timeoutMs: 15000,
     pollIntervalMs: 5000,
+  },
+  slack: {
+    webhookUrl: '',
   },
 };
 
@@ -122,6 +126,18 @@ function resolveRunFilterIds(executor, testIds = [], options = {}) {
   }
 
   return undefined;
+}
+
+function resolveRunInvocation(testIds = [], options = {}) {
+  const normalizedIds = Array.isArray(testIds) ? [...testIds] : [];
+  let slackRequested = Boolean(options.slack);
+
+  if (normalizedIds.length > 0 && normalizedIds[normalizedIds.length - 1] === 'slack') {
+    normalizedIds.pop();
+    slackRequested = true;
+  }
+
+  return { testIds: normalizedIds, slackRequested };
 }
 
 function createProgram(projectDir) {
@@ -308,6 +324,7 @@ function createProgram(projectDir) {
     .argument('[testIds...]', '実行するテストID')
     .option('--from <testId>', '指定したテストIDから末尾まで実行')
     .option('--scenario [ids]', 'シナリオ実行（省略時: 全件、指定時: カンマ区切りID順）')
+    .option('--slack', '実行結果をSlackに通知')
     .description('テスト実行')
     .action(async (testIds, options) => {
       const config = loadConfig(projectDir);
@@ -323,9 +340,10 @@ function createProgram(projectDir) {
       }
 
       const executor = new TestExecutor(path.join(projectDir, 'tests'), projectDir);
+      const runInvocation = resolveRunInvocation(testIds, options);
       let filterIds;
       try {
-        filterIds = resolveRunFilterIds(executor, testIds, options);
+        filterIds = resolveRunFilterIds(executor, runInvocation.testIds, options);
       } catch (error) {
         console.error(error.message || error);
         return;
@@ -345,6 +363,28 @@ function createProgram(projectDir) {
           120000
         ),
       });
+
+      const slackWebhookUrl = process.env.SLACK_WEBHOOK_URL
+        || (config.slack && config.slack.webhookUrl);
+      const shouldNotifySlack = runInvocation.slackRequested || Boolean(process.env.SLACK_WEBHOOK_URL);
+      if (shouldNotifySlack && result.testCount > 0) {
+        if (!slackWebhookUrl) {
+          console.error('Slack通知エラー: webhook URLが未設定です（config.slack.webhookUrl または SLACK_WEBHOOK_URL）');
+          return;
+        }
+
+        const jsonReportPath = path.join(projectDir, 'test-results', 'results.json');
+        try {
+          const notifyResult = await notifyFromPlaywrightReport(slackWebhookUrl, jsonReportPath);
+          if (notifyResult.sent) {
+            console.log(`Slackに通知しました（${notifyResult.caseCount}件）`);
+          } else {
+            console.log('Slack通知対象の結果が見つからなかったため、投稿をスキップしました');
+          }
+        } catch (error) {
+          console.error(`Slack通知エラー: ${error.message || error}`);
+        }
+      }
 
       if (result.testCount > 0) {
         console.log('\nレポートを表示するには: playwright-regression report');
@@ -373,7 +413,14 @@ function createProgram(projectDir) {
 }
 
 // Export for testing
-module.exports = { createProgram, loadConfig, resolveAuthVerification, loadSelectorCatalog, resolveRunFilterIds };
+module.exports = {
+  createProgram,
+  loadConfig,
+  resolveAuthVerification,
+  loadSelectorCatalog,
+  resolveRunFilterIds,
+  resolveRunInvocation,
+};
 
 // Run if called directly
 if (require.main === module) {

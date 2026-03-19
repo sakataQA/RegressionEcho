@@ -9,6 +9,44 @@ import {
   selectBamosPlan,
 } from './flow-helpers';
 
+const PURCHASES_URL = 'https://development.pocket-heroes.net/purchases';
+const EXPECTED_PAID_GAIN = 25;
+const EXPECTED_FREE_GAIN = 1;
+
+type PurchasesSnapshot = {
+  paidBamos: number | null;
+  freeBamos: number | null;
+  paid25HistoryCount: number;
+};
+
+async function goToPurchases(page: import('@playwright/test').Page): Promise<void> {
+  await page.goto(PURCHASES_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await expect(page).toHaveURL(/\/purchases/, { timeout: 30000 });
+  await page.waitForTimeout(1500);
+}
+
+async function readPurchasesSnapshot(page: import('@playwright/test').Page): Promise<PurchasesSnapshot> {
+  await page.waitForLoadState('domcontentloaded');
+  const parseNumericText = (text: string | null): number | null => {
+    if (!text) return null;
+    const m = text.replace(/[\s\u3000]+/g, '').match(/^([0-9][0-9,]*)$/);
+    return m ? Number(m[1].replace(/,/g, '')) : null;
+  };
+
+  const getBamosByLabel = async (label: string): Promise<number | null> => {
+    const labelLocator = page.getByText(label, { exact: true }).first();
+    await labelLocator.waitFor({ state: 'visible', timeout: 10000 });
+    const valueText = await labelLocator.locator('xpath=following-sibling::*[1]').first().textContent();
+    return parseNumericText(valueText);
+  };
+
+  const paidBamos = await getBamosByLabel('有償バモス');
+  const freeBamos = await getBamosByLabel('無償バモス');
+  const paid25HistoryCount = await page.locator('span').filter({ hasText: /^有償バモス\s*×\s*25$/ }).count();
+
+  return { paidBamos, freeBamos, paid25HistoryCount };
+}
+
 async function fillNewCardInStripeFrame(page: import('@playwright/test').Page): Promise<void> {
   await page.waitForSelector('dialog[open], [role="dialog"]', { timeout: 15000 });
 
@@ -74,6 +112,7 @@ test('課金フロー（purchase）', async ({ page }) => {
   test.setTimeout(300000);
   let beforeBamos: number | null = null;
   let selectedDelta = 26;
+  let purchasesBefore: PurchasesSnapshot | null = null;
   let usedRegisteredCard = false;
   let submitted = false;
   let paymentMethodPath = '未判定';
@@ -92,6 +131,15 @@ test('課金フロー（purchase）', async ({ page }) => {
     expect(beforeBamos).not.toBeNull();
     expect(beforeBamos as number).toBeGreaterThanOrEqual(0);
     console.log(`[beforeBamos] ${beforeBamos}`);
+  });
+
+  await test.step('購入前の課金履歴ページ情報をメモる（stdout）', async () => {
+    await goToPurchases(page);
+    purchasesBefore = await readPurchasesSnapshot(page);
+    console.log(`[purchasesBefore] ${JSON.stringify(purchasesBefore)}`);
+    expect(purchasesBefore?.paidBamos).not.toBeNull();
+    expect(purchasesBefore?.freeBamos).not.toBeNull();
+    await goToShop(page);
   });
 
   await test.step('商品を選択して「購入する」を押す', async () => {
@@ -204,6 +252,29 @@ test('課金フロー（purchase）', async ({ page }) => {
     console.log(`[afterBamos] ${afterBamos}`);
     expect(afterBamos).not.toBeNull();
     expect(afterBamos as number).toBeGreaterThanOrEqual(expectedAfter);
+  });
+
+  await test.step('課金履歴ページで課金結果を確認（有償+25, 無償+1, 履歴+1）', async () => {
+    let purchasesAfter: PurchasesSnapshot | null = null;
+    const expectedPaid = (purchasesBefore as PurchasesSnapshot).paidBamos as number;
+    const expectedFree = (purchasesBefore as PurchasesSnapshot).freeBamos as number;
+    const expectedHistoryCount = (purchasesBefore as PurchasesSnapshot).paid25HistoryCount;
+
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      await goToPurchases(page);
+      purchasesAfter = await readPurchasesSnapshot(page);
+      const paidOk = purchasesAfter.paidBamos === expectedPaid + EXPECTED_PAID_GAIN;
+      const freeOk = purchasesAfter.freeBamos === expectedFree + EXPECTED_FREE_GAIN;
+      const historyOk = purchasesAfter.paid25HistoryCount === expectedHistoryCount + 1;
+      if (paidOk && freeOk && historyOk) break;
+      await page.waitForTimeout(5000);
+    }
+
+    console.log(`[purchasesAfter] ${JSON.stringify(purchasesAfter)}`);
+    expect(purchasesAfter).not.toBeNull();
+    expect(purchasesAfter?.paidBamos).toBe(expectedPaid + EXPECTED_PAID_GAIN);
+    expect(purchasesAfter?.freeBamos).toBe(expectedFree + EXPECTED_FREE_GAIN);
+    expect(purchasesAfter?.paid25HistoryCount).toBe(expectedHistoryCount + 1);
   });
 
   await test.step('終了', async () => {
