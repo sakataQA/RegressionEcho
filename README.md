@@ -1,19 +1,40 @@
 # RegressionEcho
 
-リグレッションテストを効率化するCLIツール。複数段階認証が必要な環境で、手動突破後に認証状を利用してテストケースCSVから自動でPlaywrightテストを生成・実行することを想定しています。
+リグレッションテストを効率化するCLIツールです。現在は主に次の2用途で利用します。
+
+1. draw.io / diagrams.net のXMLフローを読み取り、Playwrightテストスクリプトを生成する（skill活用）
+2. 生成済みスクリプトをPlaywrightで実行し、HTMLレポートやSlack通知で結果を確認する
 
 ## 特徴
 
 - **認証状態の保存・再利用** - IAP、Okta等の多段階認証を一度突破すれば、以降は自動で認証状態を利用
-- **AI駆動のテスト生成** - Claude APIを使用して、テストケースCSVから自動でPlaywrightテストコードを生成
+- **手順ベースのテスト生成** - CSVやXMLフローを元にPlaywrightテストコードを生成
+- **XMLフロー対応skill** - `playwright-xml-flow-generator` でXML手順を解析し、`tests/*.spec.ts`の形で実装可能
 - **リグレッションテスト最適化** - 一度生成したテストスクリプトを繰り返し実行（毎回AI呼び出し不要）
 - **見やすいレポート** - Playwright標準のHTMLレポートで結果を確認
 - **QA担当者向け** - コーディング不要、コマンド実行のみで完結
 
+## このリポジトリでできること（CLI / skill）
+
+### CLIでできること
+
+- `init` で設定ファイル作成、実行に必要なディレクトリ準備
+- `auth` で手動ログイン後の認証状態を保存（`storage/auth.json`）
+- `discover-selectors` で認証済みDOMを実測し、`storage/selectors.json` を生成
+- `generate` でCSVからPlaywrightスクリプトを生成
+- `run` で回帰実行（全件/個別/シナリオ/途中再開、Slack通知対応）
+- `report` でHTMLレポート表示
+
+### skillでできること
+
+- `skills/playwright-xml-flow-generator/SKILL.md` を使い、draw.io / diagrams.net XMLから手順を抽出
+- 実アプリをPlaywright MCPで確認し、推測ではなく実測セレクタを使ってテスト化
+- XMLの手順番号を維持した `test.step()` 構成で `tests/*.spec.ts` を生成
+- 必要に応じて `tests/flow-helpers.ts` を再利用・拡張
+
 ## 必要な環境
 
 - Node.js v18以上
-- Claude API キー（[Anthropic Console](https://console.anthropic.com/)で取得）
 
 ## インストール
 
@@ -26,17 +47,36 @@ npm link  # グローバルコマンドとして使用可能にする
 
 ## 使い方
 
-## Dockerで実行する
+## Docker設定と実行方法
 
-Playwright同梱イメージを使って、ローカル環境に依存せず実行できます。
+Playwright同梱イメージ（`mcr.microsoft.com/playwright:v1.50.0-jammy`）を利用して、ローカル依存を減らして実行できます。
 
-### 1. イメージ作成
+### 1. Dockerイメージを作成
 
 ```bash
 docker compose build
 ```
 
-### 2. テスト実行
+### 2. 初期設定ファイルを作る
+
+```bash
+docker compose run --rm regressionecho init --skip-browsers
+```
+
+- `config/config.json` が生成されます
+- `config/config.json` に `testUrl` など実行環境の設定を反映してください
+
+### 3. 認証状態を保存する（推奨: ホスト側）
+
+`auth` は手動ログイン操作のため、通常はホスト側で実行する運用を推奨します。
+
+```bash
+playwright-regression auth --check-url /home --check-selector '[data-testid="hero-home"]'
+```
+
+- `docker-compose.yml` で `./storage:/app/storage` を共有しているため、保存した `storage/auth.json` をコンテナ実行時にそのまま利用できます
+
+### 4. テスト実行
 
 ```bash
 # purchaseだけ実行
@@ -46,22 +86,29 @@ docker compose run --rm regressionecho run purchase
 docker compose run --rm regressionecho run
 
 # Slack通知付き（config/config.json の webhookUrl を利用）
-docker compose run --rm regressionecho run purchase slack
+docker compose run --rm regressionecho run purchase --slack
 
 # Slack通知付き（環境変数で上書き）
 SLACK_WEBHOOK_URL='https://hooks.slack.com/services/xxx/yyy/zzz' \
-docker compose run --rm regressionecho run purchase slack
+docker compose run --rm regressionecho run purchase --slack
+
+# Slack Bot通知（要約） + HTMLレポート添付
+SLACK_WEBHOOK_URL='https://hooks.slack.com/services/xxx/yyy/zzz' \
+SLACK_ATTACH_HTML_REPORT=true \
+SLACK_BOT_TOKEN='xoxb-xxxx' \
+SLACK_CHANNEL_ID='C0123456789' \
+docker compose run --rm regressionecho run purchase --slack-html
 ```
 
-### 3. レポート確認（ホスト側で表示）
+### 5. レポート確認（ホスト側）
 
 ```bash
 npx playwright show-report
 ```
 
-- `playwright-report/` と `test-results/` はボリューム共有されるため、コンテナ実行後もホストで確認できます。
-- コンテナでは `PW_HEADLESS=true` が既定です。
-- `SLACK_WEBHOOK_URL` を設定すると、コンテナ実行時に通知先を上書きできます。
+- `playwright-report/` と `test-results/` はボリューム共有されるため、コンテナ実行後もホストで確認できます
+- コンテナでは `PW_HEADLESS=true` が既定です
+- `SLACK_WEBHOOK_URL` を設定すると、コンテナ実行時に通知先を上書きできます
 
 
 ### 1. 初期セットアップ
@@ -71,21 +118,20 @@ playwright-regression init
 ```
 
 - 設定ファイル（`config/config.json`）が生成されます
-- `config/config.json`を開き、Claude APIキーを設定してください
+- `config/config.json`を開き、`testUrl` など必要項目を設定してください
 
 ```json
 {
-  "anthropic": {
-    "apiKey": "sk-ant-xxxxx",
-    "model": "claude-sonnet-4-5-20250929"
-  },
   "playwright": {
     "headless": false,
     "timeout": 30000
   },
   "testUrl": "https://your-test-environment.example.com",
   "slack": {
-    "webhookUrl": "https://hooks.slack.com/services/xxx/yyy/zzz"
+    "webhookUrl": "https://hooks.slack.com/services/xxx/yyy/zzz",
+    "attachHtmlReport": false,
+    "botToken": "xoxb-xxxx",
+    "channelId": "C0123456789"
   },
   "authVerification": {
     "enabled": false,
@@ -180,6 +226,9 @@ playwright-regression run purchase slack
 
 # Slack通知付き（オプション）
 playwright-regression run purchase --slack
+
+# Slack通知 + HTMLレポート添付（--slack と併用可）
+playwright-regression run purchase --slack --slack-html
 ```
 
 - `run` のテストID指定は半角スペース区切りです（例: `run TC001 TC003`）
@@ -188,6 +237,10 @@ playwright-regression run purchase --slack
   例: `tests/purchase.spec.ts` は `playwright-regression run purchase`
   例: `tests/pack-open.spec.ts` は `playwright-regression run pack-open`
 - Slack通知時のWebhook URLは `SLACK_WEBHOOK_URL` を優先し、未設定時は `config/config.json` の `slack.webhookUrl` を使用します
+- HTML添付は `--slack-html` または `SLACK_ATTACH_HTML_REPORT=true` で有効化できます
+- HTML添付には `SLACK_BOT_TOKEN` と `SLACK_CHANNEL_ID`（または `config.slack.botToken` / `config.slack.channelId`）が必要です
+- `--slack-html` 有効時は、Bot経由で要約メッセージも投稿してからHTMLを添付します
+- 元の要約通知だけに戻すには `slack.attachHtmlReport` を `false` にし、`--slack-html` を付けないで実行してください
 
 ### テストファイル名の変更（リネーム）
 
@@ -218,7 +271,7 @@ playwright-regression report
 
 ```bash
 playwright-regression init          # 1. 初期設定
-# config/config.json にAPIキーを設定
+# config/config.json に testUrl などを設定
 playwright-regression auth --check-url /home --check-selector '[data-testid="hero-home"]'  # 2. 認証状態を保存
 playwright-regression discover-selectors /home /shop  # 3. DOM実測セレクタ収集
 playwright-regression generate testcases.csv --selectors storage/selectors.json  # 4. テスト生成
@@ -283,7 +336,7 @@ git push origin main
 ```
 RegressionEcho/
 ├── config/
-│   └── config.json         # 設定ファイル（APIキー等）
+│   └── config.json         # 設定ファイル（URL/Slack等）
 ├── storage/
 │   └── auth.json           # 認証状態（自動生成）
 │   └── selectors.json      # DOM実測セレクタ（任意）
@@ -322,7 +375,7 @@ playwright-regression auth  # 再認証
 ### テスト生成がうまくいかない場合
 
 - CSVフォーマットを確認してください（ヘッダー行が正しいか、文字コードがUTF-8か）
-- Claude APIキーが正しく設定されているか確認してください
+- `config/config.json` の `testUrl` や関連設定が正しいか確認してください
 - 生成されたコードを手動で修正することも可能です（`tests/`配下のファイルを直接編集）
 
 ### テスト実行時にエラーが出る場合
