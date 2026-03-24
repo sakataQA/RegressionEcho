@@ -961,11 +961,14 @@ export async function collectPackRates(page: Page): Promise<PackRate[]> {
       const nodes = Array.from(document.querySelectorAll(sel));
       for (const node of nodes) {
         if (!isVisible(node)) continue;
-        const text = (node.textContent || '').replace(/\s+/g, ' ').trim();
-        const m = text.match(/([^\n\r]+?)\s*([0-9]+\.[0-9]+%|[0-9]+%)/);
-        if (!m) continue;
-        const playerName = m[1].trim();
-        const rateText = m[2].trim();
+        const raw = (node.textContent || '').replace(/\s+/g, ' ').trim();
+        const anchorIndex = raw.lastIndexOf('提供割合');
+        const text = anchorIndex >= 0 ? raw.slice(anchorIndex).trim() : raw;
+        const m = text.match(/([0-9]+\.[0-9]+%|[0-9]+%)/);
+        if (!m || m.index === undefined) continue;
+
+        const rateText = m[1].trim();
+        const playerName = text.slice(0, m.index).trim() || '提供割合';
         const key = `${playerName}__${rateText}`;
         if (seen.has(key)) continue;
         seen.add(key);

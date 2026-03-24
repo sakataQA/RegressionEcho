@@ -9,7 +9,11 @@ const { ClaudeClient } = require('../lib/claude-client');
 const { TestGenerator } = require('../lib/test-generator');
 const { TestExecutor } = require('../lib/test-executor');
 const { DomScanner } = require('../lib/dom-scanner');
-const { notifyFromPlaywrightReport } = require('../lib/slack-notifier');
+const {
+  notifyFromPlaywrightReport,
+  notifyFromPlaywrightReportByBot,
+  uploadHtmlReportToSlack,
+} = require('../lib/slack-notifier');
 
 const CONFIG_TEMPLATE = {
   anthropic: {
@@ -30,6 +34,9 @@ const CONFIG_TEMPLATE = {
   },
   slack: {
     webhookUrl: '',
+    attachHtmlReport: false,
+    botToken: '',
+    channelId: '',
   },
 };
 
@@ -138,6 +145,20 @@ function resolveRunInvocation(testIds = [], options = {}) {
   }
 
   return { testIds: normalizedIds, slackRequested };
+}
+
+function resolveSlackOptions(runInvocation = {}, options = {}, config = {}, env = process.env) {
+  const shouldNotifySlack = Boolean(runInvocation.slackRequested);
+  const shouldAttachHtml = shouldNotifySlack && (
+    Boolean(options.slackHtml)
+    || env.SLACK_ATTACH_HTML_REPORT === 'true'
+    || Boolean(config.slack && config.slack.attachHtmlReport === true)
+  );
+
+  return {
+    shouldNotifySlack,
+    shouldAttachHtml,
+  };
 }
 
 function createProgram(projectDir) {
@@ -325,6 +346,7 @@ function createProgram(projectDir) {
     .option('--from <testId>', '指定したテストIDから末尾まで実行')
     .option('--scenario [ids]', 'シナリオ実行（省略時: 全件、指定時: カンマ区切りID順）')
     .option('--slack', '実行結果をSlackに通知')
+    .option('--slack-html', 'Playwright HTMLレポート(index.html)をSlackに添付')
     .description('テスト実行')
     .action(async (testIds, options) => {
       const config = loadConfig(projectDir);
@@ -366,7 +388,10 @@ function createProgram(projectDir) {
 
       const slackWebhookUrl = process.env.SLACK_WEBHOOK_URL
         || (config.slack && config.slack.webhookUrl);
-      const shouldNotifySlack = runInvocation.slackRequested || Boolean(process.env.SLACK_WEBHOOK_URL);
+      const slackOptions = resolveSlackOptions(runInvocation, options, config, process.env);
+      const shouldNotifySlack = slackOptions.shouldNotifySlack;
+      const slackAttachHtmlEnabled = slackOptions.shouldAttachHtml;
+
       if (shouldNotifySlack && result.testCount > 0) {
         if (!slackWebhookUrl) {
           console.error('Slack通知エラー: webhook URLが未設定です（config.slack.webhookUrl または SLACK_WEBHOOK_URL）');
@@ -383,6 +408,45 @@ function createProgram(projectDir) {
           }
         } catch (error) {
           console.error(`Slack通知エラー: ${error.message || error}`);
+        }
+      }
+
+      if (slackAttachHtmlEnabled && result.testCount > 0) {
+        const slackBotToken = process.env.SLACK_BOT_TOKEN
+          || (config.slack && config.slack.botToken);
+        const slackChannelId = process.env.SLACK_CHANNEL_ID
+          || (config.slack && config.slack.channelId);
+        if (!slackBotToken || !slackChannelId) {
+          console.error('Slack添付エラー: bot token または channel ID が未設定です（config.slack.botToken / config.slack.channelId または SLACK_BOT_TOKEN / SLACK_CHANNEL_ID）');
+        } else {
+          const htmlReportPath = path.join(projectDir, 'playwright-report', 'index.html');
+          const jsonReportPath = path.join(projectDir, 'test-results', 'results.json');
+          try {
+            const botNotifyResult = await notifyFromPlaywrightReportByBot({
+              botToken: slackBotToken,
+              channelId: slackChannelId,
+              reportPath: jsonReportPath,
+            });
+            if (botNotifyResult.sent) {
+              console.log(`Slack Botで要約を通知しました（${botNotifyResult.caseCount}件）`);
+            } else {
+              console.log('Slack Bot要約通知対象の結果が見つからなかったため、投稿をスキップしました');
+            }
+          } catch (error) {
+            console.error(`Slack Bot要約通知エラー: ${error.message || error}`);
+          }
+          try {
+            const uploadResult = await uploadHtmlReportToSlack({
+              botToken: slackBotToken,
+              channelId: slackChannelId,
+              reportPath: htmlReportPath,
+            });
+            if (uploadResult.uploaded) {
+              console.log(`SlackにHTMLレポートを添付しました（fileId: ${uploadResult.fileId || 'unknown'}）`);
+            }
+          } catch (error) {
+            console.error(`Slack添付エラー: ${error.message || error}`);
+          }
         }
       }
 
@@ -420,6 +484,7 @@ module.exports = {
   loadSelectorCatalog,
   resolveRunFilterIds,
   resolveRunInvocation,
+  resolveSlackOptions,
 };
 
 // Run if called directly

@@ -7,6 +7,7 @@ const {
   loadSelectorCatalog,
   resolveRunFilterIds,
   resolveRunInvocation,
+  resolveSlackOptions,
 } = require('../bin/cli');
 const { TestExecutor } = require('../lib/test-executor');
 
@@ -193,5 +194,29 @@ describe('CLI', () => {
     const resolved = resolveRunInvocation(['purchase'], { slack: true });
     expect(resolved.testIds).toEqual(['purchase']);
     expect(resolved.slackRequested).toBe(true);
+  });
+
+  test('resolveSlackOptions は --slack 未指定時にHTML添付を無効化する', () => {
+    const resolved = resolveSlackOptions(
+      { slackRequested: false },
+      { slackHtml: false },
+      { slack: { attachHtmlReport: true } },
+      { SLACK_ATTACH_HTML_REPORT: 'true' }
+    );
+
+    expect(resolved.shouldNotifySlack).toBe(false);
+    expect(resolved.shouldAttachHtml).toBe(false);
+  });
+
+  test('resolveSlackOptions は --slack 指定時に config.attachHtmlReport を有効化する', () => {
+    const resolved = resolveSlackOptions(
+      { slackRequested: true },
+      { slackHtml: false },
+      { slack: { attachHtmlReport: true } },
+      {}
+    );
+
+    expect(resolved.shouldNotifySlack).toBe(true);
+    expect(resolved.shouldAttachHtml).toBe(true);
   });
 });
